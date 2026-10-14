@@ -78,7 +78,6 @@ jobs:
           ./scripts/languagelist_updater.sh
           mkdir out
 
-      - 
       # Build Debug APK without release signing key
       - name: Build Debug .apk
         run: |
