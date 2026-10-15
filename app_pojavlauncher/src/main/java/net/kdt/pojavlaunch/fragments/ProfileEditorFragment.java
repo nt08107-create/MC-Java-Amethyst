@@ -1,7 +1,21 @@
 package net.kdt.pojavlaunch.fragments;
 
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
+import android.app.AlertDialog;
+import android.widget.Toast;
+import androidx.activity.result.contract.ActivityResultContracts;
+import net.kdt.pojavlaunch.utils.GimmyModFiles;
+import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.util.Locale;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
@@ -59,6 +73,15 @@ public class ProfileEditorFragment extends Fragment implements CropperUtils.Crop
     private EditText mDefaultName, mDefaultJvmArgument;
     private TextView mDefaultPath, mDefaultVersion, mDefaultControl;
     private ImageView mProfileIcon;
+    private final ActivityResultLauncher<Intent> mModPicker = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == android.app.Activity.RESULT_OK && result.getData() != null
+                        && result.getData().getData() != null) importPickedMod(result.getData().getData());
+            });
+    private final ActivityResultLauncher<String> mSkinPicker = registerForActivityResult(
+            new ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null) previewSkin(uri);
+            });
     private final ActivityResultLauncher<?> mCropperLauncher = CropperUtils.registerCropper(this, this);
 
     private List<String> mRenderNames;
@@ -114,6 +137,9 @@ public class ProfileEditorFragment extends Fragment implements CropperUtils.Crop
 
         View.OnClickListener gameDirListener = getGameDirListener();
         mGameDirButton.setOnClickListener(gameDirListener);
+        view.findViewById(R.id.vprof_editor_gimmy_mods).setOnClickListener(v -> showGimmyMods());
+        view.findViewById(R.id.vprof_editor_gimmy_isolate).setOnClickListener(v -> isolateVersion());
+        view.findViewById(R.id.vprof_editor_gimmy_skin).setOnClickListener(v -> mSkinPicker.launch("image/png"));
         mDefaultPath.setOnClickListener(gameDirListener);
 
         View.OnClickListener controlSelectListener = getControlSelectListener();
@@ -131,6 +157,146 @@ public class ProfileEditorFragment extends Fragment implements CropperUtils.Crop
         mProfileIcon.setOnClickListener(v -> CropperUtils.startCropper(mCropperLauncher));
 
         loadValues(LauncherPreferences.DEFAULT_PREF.getString(LauncherPreferences.PREF_KEY_CURRENT_PROFILE, ""), view.getContext());
+    }
+
+    /** A new dedicated game directory per selected version, without copying/moving existing saves. */
+    private void isolateVersion() {
+        String version = mDefaultVersion.getText().toString().trim();
+        if (version.isEmpty() || !version.matches("[A-Za-z0-9._+\\-]{1,100}") || version.equals(".") || version.equals("..")) {
+            new AlertDialog.Builder(requireContext()).setMessage("Select a valid installed version first.")
+                    .setPositiveButton(android.R.string.ok, null).show();
+            return;
+        }
+        File target = new File(new File(Tools.DIR_GAME_HOME, "gimmy-versions"), version);
+        new AlertDialog.Builder(requireContext()).setTitle("Isolate this version?")
+                .setMessage("Set this profile to its own game directory? Existing worlds and MODs will NOT be copied or moved. Save the profile to apply.\n" + target)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton("Use separate folder", (dialog, which) -> {
+                    if (!target.isDirectory() && !target.mkdirs()) {
+                        new AlertDialog.Builder(requireContext()).setMessage("Could not create directory")
+                                .setPositiveButton(android.R.string.ok, null).show();
+                        return;
+                    }
+                    mDefaultPath.setText(target.getAbsolutePath());
+                    mTempProfile.gameDir = target.getAbsolutePath();
+                }).show();
+    }
+
+    /** Launcher-only preview; does not claim to change the skin in Minecraft. */
+    private void previewSkin(Uri uri) {
+        try (InputStream stream = requireContext().getContentResolver().openInputStream(uri)) {
+            if (stream == null) throw new IOException("Cannot open PNG");
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeStream(stream, null, options);
+            int w = options.outWidth, h = options.outHeight;
+            if (w <= 0 || h <= 0 || w > 1024 || h > 1024 || w != 64 || (h != 32 && h != 64))
+                throw new IOException("Select a 64x64 or legacy 64x32 Minecraft PNG skin");
+        } catch (Exception e) { showModError(e); return; }
+        try (InputStream stream = requireContext().getContentResolver().openInputStream(uri)) {
+            Bitmap bitmap = BitmapFactory.decodeStream(stream);
+            if (bitmap == null) throw new IOException("Invalid image");
+            ImageView preview = new ImageView(requireContext());
+            preview.setImageBitmap(bitmap);
+            preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int padding = (int) (16 * getResources().getDisplayMetrics().density);
+            preview.setPadding(padding, padding, padding, padding);
+            new AlertDialog.Builder(requireContext()).setTitle("Minecraft PNG skin preview")
+                    .setMessage("Preview only: this does not replace your game skin.")
+                    .setView(preview).setPositiveButton(android.R.string.ok, null).show();
+        } catch (Exception e) { showModError(e); }
+    }
+
+    /** Gimmy local MOD manager; uses the currently edited profile, including unsaved path changes. */
+    private File gimmyModsDir() {
+        String path = mDefaultPath.getText().toString().trim();
+        File gameDir = path.isEmpty() ? new File(Tools.DIR_GAME_HOME) : new File(path);
+        return GimmyModFiles.modsDirectory(gameDir);
+    }
+
+    private void showGimmyMods() {
+        File dir = gimmyModsDir();
+        List<File> mods = GimmyModFiles.list(dir);
+        String[] labels = new String[mods.size()];
+        for (int i = 0; i < mods.size(); i++) {
+            String name = mods.get(i).getName();
+            labels[i] = (name.endsWith(".jar.disabled") ? "[OFF] " : "[ON] ") + name;
+        }
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Gimmy MODs: " + dir.getAbsolutePath())
+                .setItems(labels, (dialog, which) -> showModActions(dir, mods.get(which).getName()))
+                .setPositiveButton("Import .jar", (dialog, which) -> {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*"); // Some Android providers don't expose JAR MIME types.
+                    mModPicker.launch(intent);
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void showModActions(File dir, String filename) {
+        String action = filename.endsWith(".jar.disabled") ? "Enable" : "Disable";
+        new AlertDialog.Builder(requireContext()).setTitle(filename)
+                .setItems(new String[]{action, "Remove"}, (dialog, which) -> {
+                    if (which == 0) {
+                        try {
+                            GimmyModFiles.toggle(dir, filename);
+                            showGimmyMods();
+                        } catch (IOException e) { showModError(e); }
+                    } else {
+                        new AlertDialog.Builder(requireContext()).setTitle("Remove " + filename + "?")
+                                .setMessage("This deletes the selected MOD file from this profile.")
+                                .setPositiveButton("Remove", (confirm, button) -> {
+                                    try { GimmyModFiles.remove(dir, filename); showGimmyMods(); }
+                                    catch (IOException e) { showModError(e); }
+                                }).setNegativeButton("Cancel", null).show();
+                    }
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void importPickedMod(Uri uri) {
+        String name = null;
+        try (Cursor cursor = requireContext().getContentResolver().query(uri,
+                new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
+        } catch (RuntimeException e) { showModError(e); return; }
+        if (name == null || name.contains("/") || name.contains("\\") || name.equals(".") || name.equals("..")
+                || name.indexOf('\0') >= 0 || !name.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            showModError(new IOException("Select a .jar document")); return;
+        }
+        final String filename = name;
+        final File destinationDir = gimmyModsDir();
+        final Context appContext = requireContext().getApplicationContext();
+        new Thread(() -> {
+            File temp = null;
+            try {
+                temp = File.createTempFile("gimmy-import-", ".jar", appContext.getCacheDir());
+                try (InputStream in = appContext.getContentResolver().openInputStream(uri);
+                     OutputStream out = Files.newOutputStream(temp.toPath())) {
+                    if (in == null) throw new IOException("Cannot read selected document");
+                    byte[] buffer = new byte[8192]; int n;
+                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                }
+                if (!destinationDir.isDirectory() && !destinationDir.mkdirs()) throw new IOException("Cannot create MOD folder");
+                // Preserve the picker display name, and never silently overwrite existing MODs.
+                File target = new File(destinationDir, filename);
+                if (!target.getCanonicalFile().getParentFile().equals(destinationDir.getCanonicalFile()))
+                    throw new IOException("Invalid MOD file name");
+                Files.copy(temp.toPath(), target.toPath());
+                if (isAdded()) requireActivity().runOnUiThread(() -> {
+                    Toast.makeText(requireContext(), "Imported " + filename, Toast.LENGTH_SHORT).show();
+                    showGimmyMods();
+                });
+            } catch (Exception e) {
+                if (isAdded()) requireActivity().runOnUiThread(() -> showModError(e));
+            } finally { if (temp != null) temp.delete(); }
+        }, "GimmyModImport").start();
+    }
+
+    private void showModError(Exception e) {
+        if (isAdded()) new AlertDialog.Builder(requireContext()).setTitle("MOD operation failed")
+                .setMessage(e.getMessage()).setPositiveButton("OK", null).show();
     }
 
     private View.OnClickListener getGameDirListener() {
