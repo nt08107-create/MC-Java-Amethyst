@@ -201,6 +201,33 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="@id/vprof_editor_path" />
 
+            <Button
+                android:id="@+id/vprof_editor_gimmy_mods"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Manage MODs"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/vprof_editor_path" />
+
+            <Button
+                android:id="@+id/vprof_editor_gimmy_isolate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Isolate version folder"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/vprof_editor_gimmy_mods" />
+
+            <Button
+                android:id="@+id/vprof_editor_gimmy_skin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Preview skin PNG"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/vprof_editor_gimmy_isolate" />
+
             <TextView
                 android:id="@+id/textView2"
                 android:layout_width="wrap_content"
@@ -218,7 +245,7 @@
                 android:paddingVertical="0px"
 
 
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_path"
+                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_gimmy_skin"
 
                 tools:paddingVertical="@dimen/_12sdp" />
 
