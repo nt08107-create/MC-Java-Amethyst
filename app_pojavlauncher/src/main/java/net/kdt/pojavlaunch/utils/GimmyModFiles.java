@@ -1,332 +1,68 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/background_app"
-    android:orientation="vertical"
-    >
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fadeScrollbars="true"
-        android:scrollbarThumbVertical="@color/minebutton_color">
+package net.kdt.pojavlaunch.utils;
 
-        <androidx.constraintlayout.widget.ConstraintLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="@dimen/fragment_padding_medium">
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 
-            <ImageView
-                android:id="@+id/vprof_editor_profile_icon"
-                android:layout_width="@dimen/_50sdp"
-                android:layout_height="@dimen/_50sdp"
-                android:layout_marginTop="@dimen/padding_heavy"
-                android:paddingHorizontal="@dimen/profile_editor_image_padding"
+/** File operations for Gimmy-style local mod management. No authentication or game launch logic. */
+public final class GimmyModFiles {
+    private GimmyModFiles() { }
 
-                android:paddingVertical="@dimen/profile_editor_image_padding"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                tools:src="@tools:sample/avatars" />
+    public static File modsDirectory(File gameDirectory) {
+        if (gameDirectory == null) throw new IllegalArgumentException("Missing game directory");
+        return new File(gameDirectory, "mods");
+    }
 
-            <ImageView
-                android:layout_width="@dimen/_14sdp"
-                android:layout_height="@dimen/_14sdp"
-                android:src="@drawable/ic_edit_profile"
-                android:background="@drawable/background_icon_edit"
-                app:layout_constraintBottom_toBottomOf="@+id/vprof_editor_profile_icon"
-                app:layout_constraintEnd_toEndOf="@+id/vprof_editor_profile_icon"/>
+    public static List<File> list(File modsDirectory) {
+        File[] entries = modsDirectory.listFiles(file -> file.isFile() && isModName(file.getName()));
+        if (entries == null) return new ArrayList<>();
+        Arrays.sort(entries, Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
+        return new ArrayList<>(Arrays.asList(entries));
+    }
 
-            <TextView
-                android:id="@+id/vprof_editor_profile_name_sub"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/profiles_profile_name"
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_profile_name"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_profile_name" />
+    public static boolean isModName(String name) {
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        return lower.endsWith(".jar") || lower.endsWith(".jar.disabled");
+    }
 
-            <EditText
-                android:id="@+id/vprof_editor_profile_name"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/padding_large"
-                android:background="@drawable/background_line"
-                android:textSize="@dimen/_13ssp"
+    /** Import a mod selected through Android's document picker; never overwrite silently. */
+    public static File importMod(File source, File modsDirectory) throws IOException {
+        if (source == null || !source.isFile() || !source.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".jar"))
+            throw new IOException("Select a .jar file");
+        if (!modsDirectory.isDirectory() && !modsDirectory.mkdirs()) throw new IOException("Cannot create mods directory");
+        File destination = new File(modsDirectory, source.getName());
+        if (source.getCanonicalFile().equals(destination.getCanonicalFile())) return destination;
+        Files.copy(source.toPath(), destination.toPath()); // Existing file raises FileAlreadyExistsException
+        return destination;
+    }
 
-                android:ems="10"
-                android:hint="@string/unnamed"
-                android:inputType="textPersonName"
-                android:paddingHorizontal="@dimen/padding_heavy"
-                app:layout_constraintTop_toBottomOf="@id/vprof_editor_profile_icon" />
+    /** Toggle a mod by adding/removing .disabled, matching Gimmy V2.1. */
+    public static File toggle(File modsDirectory, String filename) throws IOException {
+        File source = checkedFile(modsDirectory, filename);
+        String targetName = filename.endsWith(".jar.disabled")
+                ? filename.substring(0, filename.length() - ".disabled".length())
+                : filename + ".disabled";
+        File target = new File(modsDirectory, targetName);
+        if (target.exists()) throw new IOException("Target already exists: " + targetName);
+        Files.move(source.toPath(), target.toPath());
+        return target;
+    }
 
+    public static boolean remove(File modsDirectory, String filename) throws IOException {
+        return Files.deleteIfExists(checkedFile(modsDirectory, filename).toPath());
+    }
 
-            <TextView
-                android:id="@+id/textView4"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/profiles_profile_version"
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_version_spinner"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_version_spinner" />
-
-            <TextView
-                android:id="@+id/vprof_editor_version_spinner"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:layout_marginEnd="@dimen/padding_medium"
-                android:background="@drawable/background_line"
-                android:hint="@string/version_select_hint"
-                android:paddingHorizontal="@dimen/padding_heavy"
-                android:textSize="@dimen/_13ssp"
-
-                app:layout_constraintEnd_toStartOf="@+id/vprof_editor_version_button"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_profile_name" />
-
-            <Button
-                android:id="@+id/vprof_editor_version_button"
-                android:layout_width="wrap_content"
-                android:layout_height="0dp"
-                android:paddingHorizontal="@dimen/padding_large"
-                android:paddingVertical="0px"
-
-
-                android:text="@string/global_select"
-
-                app:layout_constraintBottom_toBottomOf="@+id/vprof_editor_version_spinner"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/vprof_editor_version_spinner" />
-
-
-            <TextView
-                android:id="@+id/textView7"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/default_control"
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_ctrl_spinner"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_ctrl_spinner" />
-
-            <TextView
-                android:id="@+id/vprof_editor_ctrl_spinner"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:layout_marginEnd="@dimen/padding_medium"
-
-                android:background="@drawable/background_line"
-                android:hint="@string/use_global_default"
-                android:paddingHorizontal="@dimen/padding_heavy"
-                android:textSize="@dimen/_13ssp"
-
-                app:layout_constraintEnd_toStartOf="@id/vprof_editor_ctrl_button"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_version_spinner" />
-
-            <Button
-                android:id="@+id/vprof_editor_ctrl_button"
-                android:layout_width="wrap_content"
-                android:layout_height="0dp"
-                android:paddingHorizontal="@dimen/padding_large"
-                android:text="@string/global_select"
-
-
-                app:layout_constraintBottom_toBottomOf="@id/vprof_editor_ctrl_spinner"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@id/vprof_editor_ctrl_spinner" />
-
-
-            <TextView
-                android:id="@+id/textView6"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/pvc_jvmArgs"
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_jre_args"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_jre_args" />
-
-            <EditText
-                android:id="@+id/vprof_editor_jre_args"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:background="@drawable/background_line"
-                android:ems="10"
-                android:hint="@string/use_global_default"
-                android:inputType="text"
-                android:paddingHorizontal="@dimen/padding_heavy"
-                android:textSize="@dimen/_13ssp"
-
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_ctrl_spinner" />
-
-            <TextView
-                android:id="@+id/vprof_editor_beginPathView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-
-                android:text="Custom path"
-
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_path"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_path" />
-
-            <TextView
-                android:id="@+id/vprof_editor_path"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:layout_marginEnd="@dimen/padding_medium"
-                android:background="@drawable/background_line"
-                android:ems="10"
-                android:maxLines="2"
-                android:ellipsize="end"
-
-                android:hint=".minecraft"
-                android:paddingHorizontal="@dimen/padding_heavy"
-                android:textSize="@dimen/_13ssp"
-
-                app:layout_constraintEnd_toStartOf="@id/vprof_editor_path_button"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_jre_args" />
-
-            <Button
-                android:id="@+id/vprof_editor_path_button"
-                android:layout_width="wrap_content"
-                android:layout_height="0dp"
-                android:paddingHorizontal="@dimen/padding_large"
-                android:text="@string/global_select"
-
-                app:layout_constraintBottom_toBottomOf="@id/vprof_editor_path"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@id/vprof_editor_path" />
-
-            <Button
-                android:id="@+id/vprof_editor_gimmy_mods"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="Manage MODs"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/vprof_editor_path" />
-
-            <Button
-                android:id="@+id/vprof_editor_gimmy_isolate"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Isolate version folder"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/vprof_editor_gimmy_mods" />
-
-            <Button
-                android:id="@+id/vprof_editor_gimmy_skin"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Preview skin PNG"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/vprof_editor_gimmy_isolate" />
-
-            <TextView
-                android:id="@+id/textView2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/pedit_java_runtime"
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_spinner_runtime"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_spinner_runtime" />
-
-            <Spinner
-                android:id="@+id/vprof_editor_spinner_runtime"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:background="@drawable/background_line"
-                android:paddingVertical="0px"
-
-
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_gimmy_skin"
-
-                tools:paddingVertical="@dimen/_12sdp" />
-
-            <ImageView
-                android:layout_width="wrap_content"
-                android:layout_height="@dimen/_8sdp"
-                android:paddingHorizontal="@dimen/_8sdp"
-                android:rotation="180"
-                android:src="@drawable/spinner_arrow"
-
-                app:layout_constraintBottom_toBottomOf="@id/vprof_editor_spinner_runtime"
-                app:layout_constraintEnd_toEndOf="@id/vprof_editor_spinner_runtime"
-                app:layout_constraintTop_toTopOf="@id/vprof_editor_spinner_runtime" />
-
-
-            <TextView
-                android:id="@+id/textView3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/pedit_renderer"
-                app:layout_constraintBottom_toTopOf="@+id/vprof_editor_profile_renderer"
-                app:layout_constraintStart_toStartOf="@+id/vprof_editor_profile_renderer" />
-
-            <Spinner
-                android:id="@+id/vprof_editor_profile_renderer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:background="@drawable/background_line"
-                android:dropDownWidth="match_parent"
-                android:paddingVertical="0px"
-
-
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_spinner_runtime"
-                tools:paddingVertical="@dimen/_12sdp" />
-
-            <ImageView
-                android:layout_width="wrap_content"
-                android:layout_height="@dimen/_8sdp"
-                android:paddingHorizontal="@dimen/_8sdp"
-                android:rotation="180"
-                android:src="@drawable/spinner_arrow"
-
-                app:layout_constraintBottom_toBottomOf="@id/vprof_editor_profile_renderer"
-                app:layout_constraintEnd_toEndOf="@id/vprof_editor_profile_renderer"
-                app:layout_constraintTop_toTopOf="@id/vprof_editor_profile_renderer" />
-
-            <CheckBox
-                android:id="@+id/vprof_editor_profile_angle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-
-                android:text="@string/use_angle_checkbox"
-
-                app:layout_constraintTop_toBottomOf="@+id/vprof_editor_profile_renderer"
-                tools:paddingVertical="@dimen/_12sdp" />
-
-        </androidx.constraintlayout.widget.ConstraintLayout>
-    </ScrollView>
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/fragment_padding_medium"
-        android:layout_marginVertical="13dp"
-        >
-        <com.kdt.mcgui.MineButton
-            android:id="@+id/vprof_editor_save_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/global_save"
-            android:layout_marginEnd="@dimen/padding_medium" />
-
-        <com.kdt.mcgui.MineButton
-            android:id="@+id/vprof_editor_delete_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="@dimen/padding_medium"
-            android:text="@string/global_delete" />
-    </LinearLayout>
-</LinearLayout>
+    private static File checkedFile(File directory, String filename) throws IOException {
+        if (directory == null || filename == null || filename.contains("/") || filename.contains("\\") || filename.equals(".") || filename.equals("..") || !isModName(filename))
+            throw new IOException("Invalid mod filename");
+        File file = new File(directory, filename);
+        if (!file.getCanonicalFile().getParentFile().equals(directory.getCanonicalFile()) || !file.isFile())
+            throw new IOException("Mod does not exist in selected directory");
+        return file;
+    }
+}
